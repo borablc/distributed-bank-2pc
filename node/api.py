@@ -19,10 +19,47 @@ def ping():
 @app.route("/balance/<int:account_id>", methods=["GET"])
 def get_balance(account_id):
     cfg = get_config()
-    balance = cfg.db.get_balance(account_id)
-    if balance is None:
-        return jsonify({"error": "account_not_found"}), 404
-    return jsonify({"account_id": account_id, "balance": balance})
+    tx = None
+
+    try:
+        # 1) Transaction başlat
+        tx = dlm_client.begin_tx()
+
+        # 2) S-lock al (read lock)
+        dlm_client.acquire_lock(tx.tx_id, account_id, mode="S")
+
+        # 3) Local DB'den oku
+        balance = cfg.db.get_balance(account_id)
+        if balance is None:
+            # Hesap yoksa 404 dönelim ama önce lockları bırakacağız
+            resp = jsonify({"error": "account_not_found"})
+            resp.status_code = 404
+            return resp
+
+        # 4) Başarılı durumda balance döndür
+        return jsonify({
+            "node_id": cfg.node_id,
+            "account_id": account_id,
+            "balance": balance,
+            "tx_id": tx.tx_id,
+        })
+
+    except dlm_client.DlmClientError as e:
+        # DLM ile ilgili bir hata
+        return jsonify({"error": "dlm_error", "detail": str(e)}), 500
+
+    finally:
+        # 5) Ne olursa olsun lockları bırak ve tx'i bitir
+        if tx is not None:
+            try:
+                dlm_client.unlock_all(tx.tx_id)
+            except dlm_client.DlmClientError:
+                # Burada çok zorlamaya gerek yok, loglarsın normalde
+                pass
+            try:
+                dlm_client.end_tx(tx.tx_id)
+            except dlm_client.DlmClientError:
+                pass
 
 
 @app.route("/deposit", methods=["POST"])
