@@ -1,22 +1,24 @@
 import sqlite3
 import os
 
+# node/data klasörünü ayarla
 DB_FOLDER = os.path.join(os.path.dirname(__file__), "data")
 
+
 class NodeDatabase:
-    def __init__(self, node_id):
+    def __init__(self, node_id: int):
         self.node_id = node_id
+
+        # Her node kendi .db dosyasına sahip
+        os.makedirs(DB_FOLDER, exist_ok=True)
         self.db_path = os.path.join(DB_FOLDER, f"node{node_id}.db")
 
-        # Klasör yoksa oluştur
-        os.makedirs(DB_FOLDER, exist_ok=True)
-
-        # Bağlantı oluştur
+        # SQLite bağlantısı
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
 
-        # Tabloyu oluştur
         self._create_schema()
+        self._seed_initial_data()  # <- burada temizleyip dolduruyoruz
 
     def _create_schema(self):
         query = """
@@ -28,21 +30,21 @@ class NodeDatabase:
         self.conn.execute(query)
         self.conn.commit()
 
-    # Basic operations
-    def get_balance(self, account_id):
-        cur = self.conn.execute("SELECT balance FROM accounts WHERE id = ?", (account_id,))
-        row = cur.fetchone()
-        return row["balance"] if row else None
+    def _seed_initial_data(self):
+        self.conn.execute("DELETE FROM accounts;")
 
-    def update_balance(self, account_id, new_balance):
-        self.conn.execute("UPDATE accounts SET balance = ? WHERE id = ?", (new_balance, account_id))
+        initial_accounts = [
+            (1, 1000),
+            (2, 1500),
+            (3, 3000),
+        ]
+
+        self.conn.executemany(
+            "INSERT INTO accounts (id, balance) VALUES (?, ?);",
+            initial_accounts,
+        )
         self.conn.commit()
 
-    def create_account(self, account_id, initial_balance):
-        self.conn.execute("INSERT INTO accounts (id, balance) VALUES (?, ?)", (account_id, initial_balance))
-        self.conn.commit()
-
-    # Transaction wrappers (2PC için kullanılacak)
     def begin(self):
         self.conn.execute("BEGIN")
 
@@ -51,3 +53,29 @@ class NodeDatabase:
 
     def rollback(self):
         self.conn.rollback()
+
+    # --- Basit CRUD ---
+
+    def get_balance(self, account_id: int):
+        cur = self.conn.execute(
+            "SELECT balance FROM accounts WHERE id = ?",
+            (account_id,)
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        return row["balance"]
+
+    def create_account(self, account_id: int, initial_balance: int):
+        self.conn.execute(
+            "INSERT INTO accounts (id, balance) VALUES (?, ?)",
+            (account_id, initial_balance)
+        )
+        self.conn.commit()
+
+    def update_balance(self, account_id: int, new_balance: int):
+        self.conn.execute(
+            "UPDATE accounts SET balance = ? WHERE id = ?",
+            (new_balance, account_id)
+        )
+        self.conn.commit()

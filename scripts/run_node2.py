@@ -1,18 +1,22 @@
 import os
 import sys
 
-CURRENT = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(CURRENT)
-sys.path.insert(0, ROOT)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(CURRENT_DIR)
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from node.api import app
-from node.config import NodeConfig
+from node.config import init_config
+
 
 if __name__ == "__main__":
-    app.config["NODE_CONFIG"] = NodeConfig(
+    config = init_config(
         node_id=2,
         port=5002,
         dlm_url="http://127.0.0.1:5000",
-        other_nodes=["http://127.0.0.1:5001"]
+        other_nodes=["http://127.0.0.1:5001"],
     )
-    app.run(port=5002, debug=True)
+    app.config["NODE_CONFIG"] = config
+
+    app.run(port=config.port, debug=True)
