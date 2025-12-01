@@ -1,3 +1,4 @@
+import time
 from .config import get_config
 from . import dlm_client, replication_client
 
@@ -35,7 +36,6 @@ def get_balance(account_id: int):
             except:
                 # logging can be made here
                 pass
-
 
 def deposit(account_id: int, amount: int):
     cfg = get_config()
@@ -100,7 +100,6 @@ def deposit(account_id: int, amount: int):
             except:
                 # logging can be made here
                 pass
-
 
 def transfer(from_id: int, to_id: int, amount: int):
     cfg = get_config()
@@ -188,6 +187,66 @@ def transfer(from_id: int, to_id: int, amount: int):
                 # logging can be made here
                 pass
 
+def test_s_lock(account_id:int):
+    tx = None
+    cfg = get_config()
+
+    try:
+        tx = dlm_client.begin_tx()
+        dlm_client.acquire_lock(tx.tx_id, account_id, "S")
+        time.sleep(3)
+
+        return {
+            "status": "ok",
+            "node": cfg.node_id,
+            "account_id": account_id,
+            "lock_mode": "s_lock",
+            "tx_id": tx.tx_id,
+        }, 200
+
+    except dlm_client.DlmClientError as e:
+        return {"error": "dlm_error", "detail": str(e)}, 500
+
+    finally:
+        if tx is not None:
+            try:
+                dlm_client.unlock_all(tx.tx_id)
+            except:
+                pass
+            try:
+                dlm_client.end_tx(tx.tx_id)
+            except:
+                pass
+
+def test_x_lock(account_id:int):
+    tx = None
+    cfg = get_config()
+
+    try:
+        tx = dlm_client.begin_tx()
+        dlm_client.acquire_lock(tx.tx_id, account_id, "X")
+        time.sleep(3)
+
+        return {
+            "status": "ok",
+            "node": cfg.node_id,
+            "account_id": account_id,
+            "lock_mode": "x_lock",
+            "tx_id": tx.tx_id,
+        }, 200
+    except dlm_client.DlmClientError as e:
+        return {"error": "dlm_error", "detail": str(e)}, 500
+
+    finally:
+        if tx is not None:
+            try:
+                dlm_client.unlock_all(tx.tx_id)
+            except:
+                pass
+            try:
+                dlm_client.end_tx(tx.tx_id)
+            except:
+                pass
 
 # 2PC PARTICIPANT (prepare / commit / abort)
 def prepare(tx_id: str, account_id: int, new_balance: int):
@@ -205,7 +264,6 @@ def prepare(tx_id: str, account_id: int, new_balance: int):
     cfg.prepared_txs.setdefault(tx_id, []).append({"account_id": account_id, "new_balance": new_balance})
 
     return {"vote": "YES"}, 200
-
 
 def commit_tx(tx_id: str):
     cfg = get_config()
@@ -226,8 +284,6 @@ def commit_tx(tx_id: str):
         return {"ok": False, "info": "db_error_on_commit"}, 500
 
     return {"ok": True}, 200
-
-
 
 def abort_tx(tx_id: str):
     cfg = get_config()

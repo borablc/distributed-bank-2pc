@@ -71,6 +71,26 @@ def transfer():
     return jsonify(body), code
 
 
+@app.route("/test_s_lock/<int:account_id>", methods=["GET"])
+def test_s_lock(account_id):
+    try:
+        account_id = int(account_id)
+    except ValueError:
+        return jsonify({"error": "account_id_must_be_int"}), 400
+
+    body, code = node_service.test_s_lock(account_id)
+    return jsonify(body), code
+
+
+@app.route("/test_x_lock/<int:account_id>", methods=["GET"])
+def test_x_lock(account_id):
+    try:
+        account_id = int(account_id)
+    except ValueError:
+        return jsonify({"error": "account_id_must_be_int"}), 400
+
+    body, code = node_service.test_x_lock(account_id)
+    return jsonify(body), code
 
 
 @app.route("/prepare", methods=["POST"])
