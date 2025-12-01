@@ -5,8 +5,6 @@ from .lock_manager import acquire_lock, extend_lock, unlock_all as lm_unlock_all
 import json
 
 app = Flask(__name__)
-
-# Redis bağlantısı
 r = get_redis()
 
 @app.route("/ping", methods=["GET"])
@@ -28,7 +26,6 @@ def begin_tx():
         "node_id": tx_info.node_id,
         "status": tx_info.status,
     })
-
 
 
 @app.route("/lock_acquire", methods=["POST"])

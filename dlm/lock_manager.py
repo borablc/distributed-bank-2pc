@@ -32,12 +32,12 @@ def _load_holders(resource_id: int):
 
     holders = json.loads(raw)
 
-    # Expired lock'ları burada temizleyelim
+    # Cleaning the expired locks
     now = time.time()
     alive = [h for h in holders if h.get("expires_at", 0) > now]
 
     if len(alive) != len(holders):
-        # Bir şeyler expired olduysa Redis'i güncelle
+        # If there is expired locks, update the redis
         if alive:
             r.set(_lock_key(resource_id), json.dumps(alive))
         else:
@@ -74,28 +74,18 @@ def _remove_tx_lock_mapping(tx_id: str):
 
 
 def acquire_lock(tx_id: str, resource_id: int, mode: LockMode) -> LockResult:
-    """
-    Wait-Die ile S/X lock acquire.
-    - GRANTED -> lock verildi
-    - RETRY   -> yaşlı transaction, bekleyip tekrar denemeli
-    - ABORT   -> genç transaction, abort edilmeli
-    """
-    r = get_redis()
-
     tx_ts = get_tx_ts(tx_id)
     if tx_ts is None:
         return LockResult(status="ABORT", reason="unknown_tx")
 
     holders = _load_holders(resource_id)
 
-    # Aynı tx daha önce lock aldıysa ve tekrar istiyorsa:
-    # (çok kasmadan: aynı modu tekrar istiyorsa GRANTED; upgrade senaryosuna girmiyoruz)
-    existing = [h for h in holders if h["tx_id"] == tx_id]
+    # If same txn take the same lock before, return GRANTED
+    existing = [h for h in holders if (h["tx_id"] == tx_id and h["mode"] == mode)]
     if existing:
-        # Aynı tx zaten bu resource'u tutuyor -> OK say
-        return LockResult(status="GRANTED")
+        return LockResult(status="GRANTED", reason="lock_already_acquired")
 
-    # Hiç holder yoksa -> direkt ver
+    # If there is no holder, return GRANTED
     if not holders:
         expires_at = time.time() + LOCK_TIMEOUT_SECONDS
         holders.append({
@@ -106,13 +96,10 @@ def acquire_lock(tx_id: str, resource_id: int, mode: LockMode) -> LockResult:
         })
         _save_holders(resource_id, holders)
         _add_tx_lock_mapping(tx_id, resource_id)
-        return LockResult(status="GRANTED")
+        return LockResult(status="GRANTED", reason="no_other_holders")
 
-    # Conflict kontrolü
-    # - S lock: sadece X varsa conflict
-    # - X lock: S veya X fark etmez, başka tx varsa conflict
+    #Check for conflicts, there can be multiple S-Locks on the same account.
     conflicting = []
-
     if mode == "S":
         for h in holders:
             if h["mode"] == "X" and h["tx_id"] != tx_id:
@@ -122,10 +109,8 @@ def acquire_lock(tx_id: str, resource_id: int, mode: LockMode) -> LockResult:
             if h["tx_id"] != tx_id:
                 conflicting.append(h)
 
+    # If there is no conflict, return GRANTED
     if not conflicting:
-        # Conflict yok, ama S->S veya S->X vb. durum:
-        # mode == "S" ise diğer S'lerin yanına ekle
-        # mode == "X" ise burada aslında sadece aynı tx olabilirdi ama onu yukarıda ele aldık
         expires_at = time.time() + LOCK_TIMEOUT_SECONDS
         holders.append({
             "tx_id": tx_id,
@@ -135,18 +120,16 @@ def acquire_lock(tx_id: str, resource_id: int, mode: LockMode) -> LockResult:
         })
         _save_holders(resource_id, holders)
         _add_tx_lock_mapping(tx_id, resource_id)
-        return LockResult(status="GRANTED")
+        return LockResult(status="GRANTED", reason="no_conflicting_holders")
 
-    # Wait-Die kararı:
-    # Eğer tx daha genç ise -> DIE (ABORT)
-    # Eğer tx daha yaşlı ise -> WAIT (biz RETRY status döndürüyoruz)
+    # There is conflict so we need to check if its old or young.
     min_conflict_ts = min(int(h["ts"]) for h in conflicting)
 
     if tx_ts > min_conflict_ts:
-        # Genç -> DIE
+        # Young -> DIE
         return LockResult(status="ABORT", reason="younger_than_conflict")
     else:
-        # Yaşlı -> WAIT
+        # Old -> WAIT
         return LockResult(status="RETRY", reason="older_tx_should_wait")
 
 
@@ -171,7 +154,9 @@ def unlock_all(tx_id: str):
     r = get_redis()
     key = _tx_locks_key(tx_id)
     raw = r.get(key)
+
     if not raw:
+        # logging can be done here
         return
 
     resources: list[int] = json.loads(raw)

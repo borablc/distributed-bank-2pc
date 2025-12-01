@@ -1,119 +1,117 @@
 from flask import Flask, request, jsonify
 from .config import get_config
-from . import dlm_client
-
+from . import node_service
 
 app = Flask(__name__)
 
 
-@app.route("/ping", methods=["GET"])
+@app.route("/ping")
 def ping():
     cfg = get_config()
-    return jsonify({
-        "status": "ok",
-        "message": f"Node {cfg.node_id} alive",
-        "db_path": cfg.db.db_path,
-    })
+    return jsonify({"node_id": cfg.node_id, "status": "ok"})
 
 
 @app.route("/balance/<int:account_id>", methods=["GET"])
 def get_balance(account_id):
-    cfg = get_config()
-    tx = None
-
     try:
-        # 1) Transaction başlat
-        tx = dlm_client.begin_tx()
+        account_id = int(account_id)
+    except ValueError:
+        return jsonify({"error": "account_id_must_be_int"}), 400
 
-        # 2) S-lock al (read lock)
-        dlm_client.acquire_lock(tx.tx_id, account_id, mode="S")
-
-        # 3) Local DB'den oku
-        balance = cfg.db.get_balance(account_id)
-        if balance is None:
-            # Hesap yoksa 404 dönelim ama önce lockları bırakacağız
-            resp = jsonify({"error": "account_not_found"})
-            resp.status_code = 404
-            return resp
-
-        # 4) Başarılı durumda balance döndür
-        return jsonify({
-            "node_id": cfg.node_id,
-            "account_id": account_id,
-            "balance": balance,
-            "tx_id": tx.tx_id,
-        })
-
-    except dlm_client.DlmClientError as e:
-        # DLM ile ilgili bir hata
-        return jsonify({"error": "dlm_error", "detail": str(e)}), 500
-
-    finally:
-        # 5) Ne olursa olsun lockları bırak ve tx'i bitir
-        if tx is not None:
-            try:
-                dlm_client.unlock_all(tx.tx_id)
-            except dlm_client.DlmClientError:
-                # Burada çok zorlamaya gerek yok, loglarsın normalde
-                pass
-            try:
-                dlm_client.end_tx(tx.tx_id)
-            except dlm_client.DlmClientError:
-                pass
+    body, code = node_service.get_balance(account_id)
+    return jsonify(body), code
 
 
 @app.route("/deposit", methods=["POST"])
 def deposit():
-    return jsonify({"error": "not_implemented"}), 501
+    data = request.get_json(force=True) or {}
+    account_id = data.get("account_id")
+    amount = data.get("amount")
 
+    if account_id is None or amount is None:
+        return jsonify({"error": "account_id_and_amount_required"}), 400
 
-@app.route("/withdraw", methods=["POST"])
-def withdraw():
-    return jsonify({"error": "not_implemented"}), 501
+    try:
+        account_id = int(account_id)
+        amount = int(amount)
+    except ValueError:
+        return jsonify({"error": "account_id_and_amount_must_be_int"}), 400
+
+    if amount <= 0:
+        return jsonify({"error": "amount_must_be_positive"}), 400
+
+    body, code = node_service.deposit(account_id, amount)
+    return jsonify(body), code
 
 
 @app.route("/transfer", methods=["POST"])
 def transfer():
-    return jsonify({"error": "not_implemented"}), 501
+    data = request.get_json(force=True) or {}
+    from_id = data.get("from_id")
+    to_id = data.get("to_id")
+    amount = data.get("amount")
+
+    if from_id is None or to_id is None or amount is None:
+        return jsonify({"error": "from_id_and_to_id_and_amount_required"}), 400
+
+    try:
+        from_id = int(from_id)
+        to_id = int(to_id)
+        amount = int(amount)
+    except ValueError:
+        return jsonify({"error": "from_id_and_to_id_and_amount_must_be_int"}), 400
+
+    if amount <= 0:
+        return jsonify({"error": "amount_must_be_positive"}), 400
+
+    if from_id == to_id:
+        return jsonify({"error": "from_and_to_cannot_be_same_account"}), 400
+
+    body, code = node_service.transfer(from_id, to_id, amount)
+    return jsonify(body), code
+
+
 
 
 @app.route("/prepare", methods=["POST"])
 def prepare():
-    return jsonify({"error": "not_implemented"}), 501
+    data = request.get_json(force=True) or {}
+    tx_id = data.get("tx_id")
+    account_id = data.get("account_id")
+    new_balance = data.get("new_balance")
+
+    if tx_id is None or account_id is None or new_balance is None:
+        return jsonify({"vote": "NO", "error": "tx_id_account_id_new_balance_required"}), 400
+
+    try:
+        account_id = int(account_id)
+        new_balance = int(new_balance)
+    except ValueError:
+        return jsonify({"vote": "NO", "error": "account_id_and_new_balance_must_be_int"}), 400
+
+    body, code = node_service.prepare(tx_id, account_id, new_balance)
+    return jsonify(body), code
 
 
 @app.route("/commit", methods=["POST"])
 def commit():
-    return jsonify({"error": "not_implemented"}), 501
+    data = request.get_json(force=True) or {}
+    tx_id = data.get("tx_id")
+
+    if tx_id is None:
+        return jsonify({"error": "tx_id_required"}), 400
+
+    body, code = node_service.commit_tx(tx_id)
+    return jsonify(body), code
 
 
 @app.route("/abort", methods=["POST"])
 def abort():
-    return jsonify({"error": "not_implemented"}), 501
+    data = request.get_json(force=True) or {}
+    tx_id = data.get("tx_id")
 
-@app.route("/debug_tx", methods=["POST"])
-def debug_tx():
-    try:
-        tx = dlm_client.begin_tx()
-        dlm_client.end_tx(tx.tx_id)
-    except dlm_client.DlmClientError as e:
-        return jsonify({"error": str(e)}), 500
+    if tx_id is None:
+        return jsonify({"error": "tx_id_required"}), 400
 
-    cfg = get_config()
-    return jsonify({
-        "node_id": cfg.node_id,
-        "tx_id": tx.tx_id,
-        "ts": tx.ts,
-    })
-
-
-if __name__ == "__main__":
-    # Direkt çalıştırmak istersen (ama biz genelde scripts/run_nodeX.py kullanacağız)
-    from .config import init_config
-    cfg = init_config(
-        node_id=1,
-        port=5001,
-        dlm_url="http://127.0.0.1:5000",
-        other_nodes=[],
-    )
-    app.run(port=cfg.port, debug=True)
+    body, code = node_service.abort_tx(tx_id)
+    return jsonify(body), code

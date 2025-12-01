@@ -42,10 +42,6 @@ def end_tx(tx_id: str):
 
 
 def get_tx_ts(tx_id: str) -> int | None:
-    """
-    Wait-Die için transaction'ın timestamp'ini döner.
-    tx_id yoksa None döner.
-    """
     r = get_redis()
     key = f"tx:{tx_id}"
     data = r.hgetall(key)

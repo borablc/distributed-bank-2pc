@@ -42,15 +42,7 @@ def end_tx(tx_id: str):
     if resp.status_code != 200:
         raise DlmClientError(f"DLM end_tx error: {resp.status_code} {resp.text}")
 
-def acquire_lock(tx_id: str, resource_id: int, mode: str,
-                 max_retries: int = 3, retry_delay: float = 0.2):
-    """
-    mode: "S" veya "X"
-    Dönüş:
-      - lock alınırsa return
-      - genç tx ise hemen DlmClientError (ABORT)
-      - yaşlı tx ise birkaç kere RETRY dener, yine olmazsa error
-    """
+def acquire_lock(tx_id: str, resource_id: int, mode: str, max_retries: int = 3, retry_delay: float = 0.2):
     cfg = get_config()
     url = cfg.dlm_url.rstrip("/") + "/lock_acquire"
 
@@ -72,19 +64,18 @@ def acquire_lock(tx_id: str, resource_id: int, mode: str,
         reason = data.get("reason")
 
         if status == "GRANTED":
-            return  # başarı
+            return
 
         if status == "ABORT":
             raise DlmClientError(f"Lock aborted by DLM (Wait-Die): {reason}")
 
         if status == "RETRY":
-            # Yaşlı tx -> bekle, tekrar dene
             time.sleep(retry_delay)
             continue
 
         raise DlmClientError(f"Unknown lock status from DLM: {status}")
 
-    # max_retries bitti
+    # max_retries finished
     raise DlmClientError("Lock acquire RETRY limit exceeded")
 
 

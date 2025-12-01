@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from .db import NodeDatabase
 
 
@@ -9,9 +9,8 @@ class NodeConfig:
     dlm_url: str
     other_nodes: list
     db: NodeDatabase
+    prepared_txs: dict[str, list] = field(default_factory=dict)
 
-
-# Uygulama içinde her yerden erişebilmek için basit bir global
 _current_config: NodeConfig | None = None
 
 
