@@ -146,8 +146,7 @@ def extend_lock(tx_id: str, resource_id: int) -> bool:
 
     if changed:
         _save_holders(resource_id, holders)
-        return True
-    return False
+    return changed
 
 
 def unlock_all(tx_id: str):

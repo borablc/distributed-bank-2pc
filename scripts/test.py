@@ -3,7 +3,6 @@ import time
 from typing import Any, Dict, Tuple
 import requests
 
-DLM = "http://127.0.0.1:5000"
 NODE1 = "http://127.0.0.1:5001"
 NODE2 = "http://127.0.0.1:5002"
 NODES = [NODE1, NODE2]

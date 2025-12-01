@@ -159,7 +159,6 @@ def transfer(from_id: int, to_id: int, amount: int):
             "tx_id": tx.tx_id,
         },200
 
-
     except dlm_client.DlmClientError as e:
         if has_txn_begin:
             cfg.db.rollback()
