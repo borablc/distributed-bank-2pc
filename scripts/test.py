@@ -192,7 +192,7 @@ def test_s_x_conflict(account_id: int = 1):
         print("[WARN] S-X testinde sonuçlar beklenenden farklı, DLM loglarını incelemek lazım.")
 
 def test_x_s_conflict(account_id: int = 1):
-    print_header("TEST 6: S-X conflict (X-lock varken S-lock)")
+    print_header("TEST 6: X-S conflict (X-lock varken S-lock)")
     results: Dict[str, Tuple[int, Any]] = {}
 
     # önce X-lock, sonra S-lock
